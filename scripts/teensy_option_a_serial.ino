@@ -83,7 +83,7 @@ int InB2 = 6;
 int enabB = 7;
 
 // Set motor polarity so a positive command means forward robot motion.
-const int LEFT_MOTOR_POLARITY = -1;
+const int LEFT_MOTOR_POLARITY = 1;
 const int RIGHT_MOTOR_POLARITY = 1;
 //=====
 
@@ -122,6 +122,11 @@ float KI2 = 0.1;
 float KD2 = 1.0;
 
 float omega_max = 15.0;      // max wheel angular velocity command
+
+// Feedforward trims compensate for left/right drive mismatch. Initial values
+// come from a stand test where straight command produced positive yaw drift.
+float leftMotorFFTrim = 0.93;
+float rightMotorFFTrim = 1.08;
 //=====
 
 //===== Command state
@@ -533,45 +538,15 @@ void controloutput() {
   if (((now_ms - local_last_cmd_ms) > COMMAND_TIMEOUT_MS) ||
       is_stop_command(local_velcom, local_yawratecom)) {
     stop_autonomous_control();
-    previous_time_v = now_ms;
-    previous_time_w = now_ms;
     return;
   }
 
-  // Velocity PID
-  float current_time_v = now_ms;
-  float dT_v = (current_time_v - previous_time_v) / 1000.0;
-  if (dT_v <= 0.0) {
-    dT_v = dt;
-  }
-  previous_time_v = current_time_v;
-
-  velerror = local_velcom - vEst_nav;
-  integral_vel += velerror * dT_v;
-  float derivative_vel = (velerror - velprevError) / dT_v;
-  u_vel = KP1 * velerror + KI1 * integral_vel + KD1 * derivative_vel;
-  velprevError = velerror;
-
-  // Yaw-rate PID. This replaces the old heading-angle PID for direct /cmd_vel angular.z control.
-  float current_time_w = now_ms;
-  float dT_w = (current_time_w - previous_time_w) / 1000.0;
-  if (dT_w <= 0.0) {
-    dT_w = dt;
-  }
-  previous_time_w = current_time_w;
-
-  yawrateerror = local_yawratecom - thetaDot;
-  integral_yawrate += yawrateerror * dT_w;
-  float derivative_yawrate = (yawrateerror - yawrateprevError) / dT_w;
-  u_yaw = KP2 * yawrateerror + KI2 * integral_yawrate + KD2 * derivative_yawrate;
-  yawrateprevError = yawrateerror;
-
-  // Combined control.
-  // Sign convention preserved close to original:
-  //   omegaR_u = u_vel - u_theta
-  //   omegaL_u = u_vel + u_theta
-  omegaR_u = u_vel - u_yaw;
-  omegaL_u = u_vel + u_yaw;
+  // ROS 2/Nav2 sends cmd_vel as linear velocity and yaw rate. The original
+  // Noetic controller used velocity + heading angle PID; reusing those heading
+  // gains for yaw-rate control caused startup jitter. Feedforward is the stable
+  // baseline. Add per-wheel encoder PID later if tighter speed tracking is needed.
+  omegaL_u = ((local_velcom - local_yawratecom * bDR * 0.5) / rNominalDR) * leftMotorFFTrim;
+  omegaR_u = ((local_velcom + local_yawratecom * bDR * 0.5) / rNominalDR) * rightMotorFFTrim;
 
   if (omegaR_u > omega_max) omegaR_u = omega_max;
   if (omegaR_u < -omega_max) omegaR_u = -omega_max;

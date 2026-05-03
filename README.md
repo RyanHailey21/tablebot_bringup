@@ -45,8 +45,8 @@ Run:
 ros2 run tablebot_bringup teensy_serial_bridge --ros-args \
   -p port:=/dev/ttyACM0 \
   -p baudrate:=115200 \
-  -p max_linear_x:=0.20 \
-  -p max_angular_z:=0.60
+  -p max_linear_x:=0.12 \
+  -p max_angular_z:=0.35
 ```
 
 Test:

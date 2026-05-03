@@ -158,7 +158,7 @@ Safety note: changing `NO_REMOTE` to stop would be reasonable later, but it inte
 Firmware constants to tune on the real robot:
 
 ```cpp
-const int LEFT_MOTOR_POLARITY = -1;
+const int LEFT_MOTOR_POLARITY = 1;
 const int RIGHT_MOTOR_POLARITY = 1;
 const int LEFT_ENCODER_POLARITY = 1;
 const int RIGHT_ENCODER_POLARITY = 1;
@@ -166,9 +166,11 @@ float bDR = 1.6 / 3.28;      // effective platform width, meters
 float rNominalDR = 0.054;    // nominal wheel radius, meters
 float eTickDR = 16000;       // encoder ticks per meter
 float omega_max = 15.0;      // max wheel angular velocity command
+float leftMotorFFTrim = 0.93;
+float rightMotorFFTrim = 1.08;
 ```
 
-Motor polarity is applied at the H-bridge output layer so a positive wheel command means forward robot motion. Current wiring needs the left motor inverted and the right motor non-inverted.
+Motor polarity is applied at the H-bridge output layer so a positive wheel command means forward robot motion. Current setting keeps both motors non-inverted.
 
 Encoder polarity is separate from motor polarity. If a wheel is physically moving forward but its raw tick topic decreases, flip that wheel's encoder polarity constant.
 
@@ -177,6 +179,17 @@ Control safety behavior:
 - Explicit zero commands, `VEL,0.0000,0.0000`, immediately clear PID state and set autonomous PWM commands to zero.
 - Command timeout also clears PID state and sets autonomous PWM commands to zero.
 - A small wheel-command deadband prevents tiny PID outputs from mapping to the minimum nonzero PWM.
+
+Current control mode:
+
+- Diagnostic feedforward mode is active.
+- `/cmd_vel` is converted directly to desired left/right wheel angular velocities:
+  - `omegaL = (v - w*b/2) / r`
+  - `omegaR = (v + w*b/2) / r`
+- The yaw term is flipped at the command conversion layer so positive ROS `angular.z` produces counterclockwise physical rotation.
+- Initial feedforward trim is set from the stand test that drifted +14.34 degrees over about 0.779 m.
+- The old combined velocity/yaw PID is bypassed because its yaw loop reused heading-angle gains as yaw-rate gains.
+- If feedforward is smooth, the next controller should be a per-wheel velocity PID using encoder-measured `omegaL` and `omegaR`.
 
 The firmware is self-contained. It no longer depends on missing custom `TimeStep.h` or `Integrator.h` libraries; odometry integration is done directly with elapsed time.
 
@@ -325,8 +338,8 @@ cmd_vel_topic: /cmd_vel
 odom_topic: /wheel/odom
 odom_frame_id: odom
 base_frame_id: base_link
-max_linear_x: 0.20
-max_angular_z: 0.60
+max_linear_x: 0.12
+max_angular_z: 0.35
 command_timeout_sec: 0.50
 send_rate_hz: 20.0
 left_ticks_topic: /wheel/left_ticks
@@ -391,8 +404,8 @@ source /opt/ros/humble/setup.bash
 python3 teensy_serial_bridge.py --ros-args \
   -p port:=/dev/ttyACM0 \
   -p baudrate:=115200 \
-  -p max_linear_x:=0.20 \
-  -p max_angular_z:=0.60
+  -p max_linear_x:=0.12 \
+  -p max_angular_z:=0.35
 ```
 
 Check odometry:

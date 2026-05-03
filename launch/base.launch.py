@@ -25,8 +25,8 @@ def generate_launch_description():
                 'odom_topic': '/wheel/odom',
                 'odom_frame_id': 'odom',
                 'base_frame_id': 'base_link',
-                'max_linear_x': 0.20,
-                'max_angular_z': 0.60,
+                'max_linear_x': 0.12,
+                'max_angular_z': 0.35,
                 'command_timeout_sec': 0.50,
                 'send_rate_hz': 20.0,
             }]
