@@ -492,6 +492,20 @@ Convenience script:
 ~/robot_ws/start_mapping.sh
 ```
 
+This opens both mapping and teleop. Teleop uses:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+  -p speed:=0.25 \
+  -p turn:=1.50
+```
+
+If mapping is already running, start teleop alone with:
+
+```bash
+~/robot_ws/start_teleop.sh
+```
+
 `mapping.launch.py` includes:
 
 - `base.launch.py`
