@@ -21,6 +21,10 @@ setup(
         (os.path.join('share', package_name, 'config'),
             glob(os.path.join('config', '*.yaml'))),
 
+        # Install RViz configs
+        (os.path.join('share', package_name, 'config'),
+            glob(os.path.join('config', '*.rviz'))),
+
         # Install maps if present
         (os.path.join('share', package_name, 'maps'),
             glob(os.path.join('maps', '*'))),

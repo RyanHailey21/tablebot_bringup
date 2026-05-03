@@ -338,8 +338,8 @@ cmd_vel_topic: /cmd_vel
 odom_topic: /wheel/odom
 odom_frame_id: odom
 base_frame_id: base_link
-max_linear_x: 0.12
-max_angular_z: 0.35
+max_linear_x: 0.35
+max_angular_z: 1.50
 command_timeout_sec: 0.50
 send_rate_hz: 20.0
 left_ticks_topic: /wheel/left_ticks
@@ -404,8 +404,8 @@ source /opt/ros/humble/setup.bash
 python3 teensy_serial_bridge.py --ros-args \
   -p port:=/dev/ttyACM0 \
   -p baudrate:=115200 \
-  -p max_linear_x:=0.12 \
-  -p max_angular_z:=0.35
+  -p max_linear_x:=0.35 \
+  -p max_angular_z:=1.50
 ```
 
 Check odometry:
@@ -472,30 +472,34 @@ If `/scan.header.frame_id` is not `laser_frame`, either adjust the RPLidar launc
 
 ## Mapping Workflow
 
-Terminal 1: base
+Preferred two-terminal workflow.
+
+Terminal 1: base + lidar + SLAM + RViz
 
 ```bash
-ros2 launch tablebot_bringup base.launch.py
+ros2 launch tablebot_bringup mapping.launch.py
 ```
 
-Terminal 2: lidar
+Terminal 2: teleop
 
 ```bash
-ros2 launch rplidar_ros view_rplidar_a2m7_launch.py
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
-Terminal 3: SLAM Toolbox
+Convenience script:
 
 ```bash
-ros2 launch slam_toolbox online_async_launch.py \
-  params_file:=$HOME/robot_ws/src/tablebot_bringup/config/slam_toolbox_mapping.yaml
+~/robot_ws/start_mapping.sh
 ```
 
-Terminal 4: RViz
+`mapping.launch.py` includes:
 
-```bash
-rviz2
-```
+- `base.launch.py`
+- `sllidar_ros2` A2M8 lidar launch on `/dev/ttyUSB0`
+- SLAM Toolbox `online_async_launch.py`
+- RViz
+
+Use SLAM Toolbox's `slam_params_file` launch argument, not `params_file`.
 
 RViz:
 

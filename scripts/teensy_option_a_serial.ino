@@ -127,6 +127,8 @@ float omega_max = 15.0;      // max wheel angular velocity command
 // come from a stand test where straight command produced positive yaw drift.
 float leftMotorFFTrim = 0.93;
 float rightMotorFFTrim = 1.08;
+const int AUTONOMOUS_MIN_PWM = 85;
+const int AUTONOMOUS_MAX_PWM = 220;
 //=====
 
 //===== Command state
@@ -556,9 +558,9 @@ void controloutput() {
   if (fabs(omegaR_u) < OMEGA_COMMAND_DEADBAND) {
     pwm_cmdr = 0;
   } else if (omegaR_u < 0) {
-    pwm_cmdr = map((long)(omegaR_u * 1000), 0, (long)(-omega_max * 1000), -40, -220);
+    pwm_cmdr = map((long)(omegaR_u * 1000), 0, (long)(-omega_max * 1000), -AUTONOMOUS_MIN_PWM, -AUTONOMOUS_MAX_PWM);
   } else if (omegaR_u > 0) {
-    pwm_cmdr = map((long)(omegaR_u * 1000), 0, (long)(omega_max * 1000), 40, 220);
+    pwm_cmdr = map((long)(omegaR_u * 1000), 0, (long)(omega_max * 1000), AUTONOMOUS_MIN_PWM, AUTONOMOUS_MAX_PWM);
   } else {
     pwm_cmdr = 0;
   }
@@ -566,9 +568,9 @@ void controloutput() {
   if (fabs(omegaL_u) < OMEGA_COMMAND_DEADBAND) {
     pwm_cmdl = 0;
   } else if (omegaL_u < 0) {
-    pwm_cmdl = map((long)(omegaL_u * 1000), 0, (long)(-omega_max * 1000), -40, -220);
+    pwm_cmdl = map((long)(omegaL_u * 1000), 0, (long)(-omega_max * 1000), -AUTONOMOUS_MIN_PWM, -AUTONOMOUS_MAX_PWM);
   } else if (omegaL_u > 0) {
-    pwm_cmdl = map((long)(omegaL_u * 1000), 0, (long)(omega_max * 1000), 40, 220);
+    pwm_cmdl = map((long)(omegaL_u * 1000), 0, (long)(omega_max * 1000), AUTONOMOUS_MIN_PWM, AUTONOMOUS_MAX_PWM);
   } else {
     pwm_cmdl = 0;
   }
