@@ -33,8 +33,8 @@ def generate_launch_description():
                 'odom_topic': '/wheel/odom',
                 'odom_frame_id': 'odom',
                 'base_frame_id': 'base_link',
-                'max_linear_x': 0.35,
-                'max_angular_z': 1.50,
+                'max_linear_x': 1.00,
+                'max_angular_z': 4.00,
                 'command_timeout_sec': 0.50,
                 'send_rate_hz': 20.0,
             }]

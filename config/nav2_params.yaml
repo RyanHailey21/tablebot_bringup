@@ -111,7 +111,7 @@ controller_server:
     controller_frequency: 10.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
-    min_theta_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.05
     failure_tolerance: 0.3
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"]
@@ -133,18 +133,19 @@ controller_server:
       debug_trajectory_details: false
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.30
+      max_vel_x: 0.60
       max_vel_y: 0.0
-      max_vel_theta: 1.35
+      min_vel_theta: -3.00
+      max_vel_theta: 3.00
       min_speed_xy: 0.0
-      max_speed_xy: 0.30
-      min_speed_theta: 0.0
-      acc_lim_x: 0.55
+      max_speed_xy: 0.60
+      min_speed_theta: 0.85
+      acc_lim_x: 1.20
       acc_lim_y: 0.0
-      acc_lim_theta: 2.2
-      decel_lim_x: -0.65
+      acc_lim_theta: 5.0
+      decel_lim_x: -1.40
       decel_lim_y: 0.0
-      decel_lim_theta: -2.4
+      decel_lim_theta: -5.5
       vx_samples: 10
       vy_samples: 5
       vtheta_samples: 15
@@ -292,9 +293,9 @@ behavior_server:
     transform_tolerance: 0.2
     use_sim_time: false
     simulate_ahead_time: 2.0
-    max_rotational_vel: 1.20
-    min_rotational_vel: 0.20
-    rotational_acc_lim: 1.8
+    max_rotational_vel: 3.00
+    min_rotational_vel: 0.90
+    rotational_acc_lim: 5.0
 
 robot_state_publisher:
   ros__parameters:
@@ -317,10 +318,10 @@ velocity_smoother:
     smoothing_frequency: 10.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [0.30, 0.0, 1.35]
-    min_velocity: [0.0, 0.0, -1.35]
-    max_accel: [0.55, 0.0, 2.2]
-    max_decel: [-0.65, 0.0, -2.4]
+    max_velocity: [0.60, 0.0, 3.00]
+    min_velocity: [0.0, 0.0, -3.00]
+    max_accel: [1.20, 0.0, 5.0]
+    max_decel: [-1.40, 0.0, -5.5]
     odom_topic: /odometry/filtered
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

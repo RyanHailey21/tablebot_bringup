@@ -127,8 +127,8 @@ float omega_max = 15.0;      // max wheel angular velocity command
 // come from a stand test where straight command produced positive yaw drift.
 float leftMotorFFTrim = 0.93;
 float rightMotorFFTrim = 1.08;
-const int AUTONOMOUS_MIN_PWM = 85;
-const int AUTONOMOUS_MAX_PWM = 220;
+const int AUTONOMOUS_MIN_PWM = 105;
+const int AUTONOMOUS_MAX_PWM = 255;
 //=====
 
 //===== Command state

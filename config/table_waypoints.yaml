@@ -3,8 +3,8 @@ enabled: true
 frame_id: map
 
 # Start with one route. After one clean pass, set loop true and repeat_count 0.
-loop: false
-repeat_count: 1
+loop: true
+repeat_count: 2
 
 waypoints:
   - name: table_loop_1
