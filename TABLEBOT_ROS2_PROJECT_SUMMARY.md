@@ -187,6 +187,7 @@ Current control mode:
   - `omegaL = (v - w*b/2) / r`
   - `omegaR = (v + w*b/2) / r`
 - The yaw term is flipped at the command conversion layer so positive ROS `angular.z` produces counterclockwise physical rotation.
+- Odometry yaw uses ROS convention: positive yaw is counterclockwise viewed from above, so `thetaDot = (omegaR - omegaL) * r / b`.
 - Initial feedforward trim is set from the stand test that drifted +14.34 degrees over about 0.779 m.
 - The old combined velocity/yaw PID is bypassed because its yaw loop reused heading-angle gains as yaw-rate gains.
 - If feedforward is smooth, the next controller should be a per-wheel velocity PID using encoder-measured `omegaL` and `omegaR`.
@@ -291,10 +292,13 @@ tablebot_bringup/
   launch/
     base.launch.py
     static_tf.launch.py
+    mapping.launch.py
+    navigation.launch.py
   config/
     ekf.yaml
     slam_toolbox_mapping.yaml
     nav2_params.yaml
+    mapping.rviz
   maps/
     table_area.yaml
     table_area.pgm
@@ -455,10 +459,15 @@ Expected frame:
 laser_frame
 ```
 
-Launch:
+Launch through the package mapping stack, or directly with the SLLidar driver:
 
 ```bash
-ros2 launch rplidar_ros view_rplidar_a2m7_launch.py
+ros2 launch sllidar_ros2 sllidar_a2m8_launch.py \
+  serial_port:=/dev/ttyUSB0 \
+  serial_baudrate:=115200 \
+  frame_id:=laser_frame \
+  inverted:=false \
+  angle_compensate:=true
 ```
 
 Validate:
@@ -518,13 +527,7 @@ Use SLAM Toolbox's `slam_params_file` launch argument, not `params_file`.
 RViz:
 
 - Fixed frame: `map`
-- Displays: TF, LaserScan `/scan`, Map `/map`, Odometry `/wheel/odom`
-
-Terminal 5: teleop
-
-```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-```
+- Displays: TF, LaserScan `/scan`, Map `/map`, Odometry `/odometry/filtered`
 
 Drive slowly around the table and nearby features.
 
@@ -545,39 +548,61 @@ table_area.pgm
 
 ## Navigation Workflow
 
-Terminal 1: base
+Use the saved map:
 
 ```bash
-ros2 launch tablebot_bringup base.launch.py
+~/robot_ws/src/tablebot_bringup/maps/table_area.yaml
 ```
 
-Terminal 2: lidar
+One-command runtime stack:
 
 ```bash
-ros2 launch rplidar_ros view_rplidar_a2m7_launch.py
+ros2 launch tablebot_bringup navigation.launch.py
 ```
 
-Terminal 3: Nav2
+Convenience script:
 
 ```bash
-ros2 launch nav2_bringup bringup_launch.py \
-  use_sim_time:=false \
-  map:=$HOME/robot_ws/src/tablebot_bringup/maps/table_area.yaml \
-  params_file:=$HOME/robot_ws/src/tablebot_bringup/config/nav2_params.yaml
+~/robot_ws/start_navigation.sh
 ```
 
-Terminal 4: RViz
+`navigation.launch.py` includes:
 
-```bash
-rviz2
+- `base.launch.py`
+- `sllidar_ros2` A2M8 lidar launch on `/dev/ttyUSB0`
+- Nav2 bringup with AMCL localization against `table_area.yaml`
+- RViz using `mapping.rviz`
+
+Nav2 parameters:
+
+```text
+config/nav2_params.yaml
+```
+
+Important frame/topic settings:
+
+```yaml
+map frame:        map
+odom frame:       odom
+base frame:       base_link
+scan topic:       /scan
+filtered odom:    /odometry/filtered
+cmd_vel output:   /cmd_vel
 ```
 
 In RViz:
 
-1. Set fixed frame to `map`.
-2. Add `Map`, `TF`, `LaserScan`, `Odometry`, and `/amcl_pose`.
-3. Use `2D Pose Estimate` to set the robot's initial pose.
-4. Use `Nav2 Goal` to test one autonomous goal.
+1. Use `2D Pose Estimate` to set the robot's initial pose on the saved map.
+2. Confirm the laser scan aligns with the map.
+3. Use `Nav2 Goal` to test one autonomous goal.
+
+Until the initial pose is set, AMCL will warn:
+
+```text
+AMCL cannot publish a pose or update the transform. Please set the initial pose...
+```
+
+The global costmap/planner may also wait for `map -> odom`. That is expected before localization has an initial pose.
 
 Do not run the waypoint loop until one clicked Nav2 goal works reliably.
 
@@ -589,10 +614,41 @@ Node:
 tablebot_bringup/circle_table_waypoints.py
 ```
 
+Implementation:
+
+```text
+Nav2 Simple Commander BasicNavigator.followWaypoints()
+```
+
+Waypoint file:
+
+```text
+~/robot_ws/src/tablebot_bringup/config/table_waypoints.yaml
+```
+
+The file has a safety latch:
+
+```yaml
+enabled: false
+```
+
+Replace the example poses with real map-frame waypoints around the table, then set:
+
+```yaml
+enabled: true
+```
+
 Run:
 
 ```bash
 ros2 run tablebot_bringup circle_table_waypoints
+```
+
+Use a custom waypoint file:
+
+```bash
+ros2 run tablebot_bringup circle_table_waypoints --ros-args \
+  -p waypoints_file:=$HOME/robot_ws/src/tablebot_bringup/config/table_waypoints.yaml
 ```
 
 Waypoint strategy:
@@ -603,6 +659,13 @@ Waypoint strategy:
 - Test two waypoints.
 - Test a full loop once.
 - Then enable indefinite looping.
+
+To repeat the route:
+
+```yaml
+loop: true
+repeat_count: 0   # 0 means forever
+```
 
 ## Known Risks
 

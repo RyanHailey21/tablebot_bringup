@@ -10,12 +10,13 @@ import os
 def generate_launch_description():
     tablebot_pkg = get_package_share_directory('tablebot_bringup')
     sllidar_pkg = get_package_share_directory('sllidar_ros2')
-    slam_toolbox_pkg = get_package_share_directory('slam_toolbox')
+    nav2_pkg = get_package_share_directory('nav2_bringup')
 
     base_launch = os.path.join(tablebot_pkg, 'launch', 'base.launch.py')
     lidar_launch = os.path.join(sllidar_pkg, 'launch', 'sllidar_a2m8_launch.py')
-    slam_launch = os.path.join(slam_toolbox_pkg, 'launch', 'online_async_launch.py')
-    slam_config = os.path.join(tablebot_pkg, 'config', 'slam_toolbox_mapping.yaml')
+    nav2_launch = os.path.join(nav2_pkg, 'launch', 'bringup_launch.py')
+    nav2_params = os.path.join(tablebot_pkg, 'config', 'nav2_params.yaml')
+    map_yaml = os.path.join(tablebot_pkg, 'maps', 'table_area.yaml')
     rviz_config = os.path.join(tablebot_pkg, 'config', 'mapping.rviz')
 
     lidar_port = LaunchConfiguration('lidar_port')
@@ -53,10 +54,14 @@ def generate_launch_description():
         ),
 
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(slam_launch),
+            PythonLaunchDescriptionSource(nav2_launch),
             launch_arguments={
-                'slam_params_file': slam_config,
+                'slam': 'False',
+                'map': map_yaml,
                 'use_sim_time': 'false',
+                'params_file': nav2_params,
+                'autostart': 'true',
+                'use_composition': 'False',
             }.items()
         ),
 

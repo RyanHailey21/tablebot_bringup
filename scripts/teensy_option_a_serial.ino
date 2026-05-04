@@ -616,7 +616,8 @@ void NavControl() {
   }
 
   vEst_nav = (omegaL + omegaR) * rNominalDR / 2.0;
-  thetaDot = (omegaL - omegaR) * rNominalDR / bDR;
+  // ROS uses positive yaw for counterclockwise rotation viewed from above.
+  thetaDot = (omegaR - omegaL) * rNominalDR / bDR;
 
   thetaEst_nav += thetaDot * TsampleEncoderDR;
 

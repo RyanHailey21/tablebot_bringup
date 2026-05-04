@@ -1,0 +1,35 @@
+# Real map-frame waypoints collected from RViz /clicked_point.
+enabled: true
+frame_id: map
+
+# Start with one route. After one clean pass, set loop true and repeat_count 0.
+loop: false
+repeat_count: 1
+
+waypoints:
+  - name: table_loop_1
+    x: -2.2572546005249023
+    y: 1.0496410131454468
+    yaw_deg: -50.0
+  - name: table_loop_2
+    x: -0.6346240043640137
+    y: -1.2635694742202759
+    yaw_deg: 40.0
+  - name: table_loop_3
+    x: 2.815711736679077
+    y: 2.0880661010742188
+    yaw_deg: 135.0
+  - name: table_loop_4
+    x: 0.14294768869876862
+    y: 4.1979146003723145
+    yaw_deg: -160.0
+
+# Optional staging points along the starting path:
+# - name: start_path_1
+#   x: -3.546928644180298
+#   y: 2.404893159866333
+#   yaw_deg: 145.0
+# - name: start_path_2
+#   x: -5.8559889793396
+#   y: 4.038048267364502
+#   yaw_deg: 145.0

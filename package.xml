@@ -8,13 +8,26 @@
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
+  <depend>action_msgs</depend>
+  <depend>ament_index_python</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>nav2_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
   <depend>tf2_ros</depend>
   <depend>robot_localization</depend>
+  <depend>nav2_bringup</depend>
+  <depend>nav2_map_server</depend>
+  <depend>nav2_amcl</depend>
+  <depend>nav2_controller</depend>
+  <depend>nav2_planner</depend>
+  <depend>nav2_bt_navigator</depend>
+  <depend>nav2_waypoint_follower</depend>
+  <depend>rviz2</depend>
+  <depend>sllidar_ros2</depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
