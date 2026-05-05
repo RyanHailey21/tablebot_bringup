@@ -2,48 +2,36 @@
 
 ## Goal
 
-Build a ROS 2 Humble stack for the skid-steer tablebot so it can:
-
-1. Drive from standard ROS 2 `/cmd_vel` commands.
-2. Publish wheel odometry from the Teensy/encoder base.
-3. Build and save a 2D map with RPLidar A2M7 and SLAM Toolbox.
-4. Localize against the saved map.
-5. Use Nav2 waypoints to circle a table indefinitely.
+Build a ROS 2 Humble stack for the skid-steer Tablebot so it can map a room, localize on the saved map, and use Nav2 to circle a table.
 
 Hardware:
 
-- Intel NUC running Ubuntu 22.04 and ROS 2 Humble.
-- Teensy 4.1 over USB serial.
-- RPLidar A2M7 over USB serial.
-- Two-motor skid-steer drive with wheel encoders.
-- No IMU.
-- Existing RC/Pixhawk manual override logic is retained.
+- Intel NUC running Ubuntu 22.04 and ROS 2 Humble
+- Teensy 4.1 over USB serial
+- SLAMTEC/RPLidar A2M8 over USB serial
+- Two-motor skid-steer drive with encoders
+- No IMU
+- Existing manual override logic retained
 
-## Architecture
-
-The Teensy is a low-level motor and encoder controller. ROS 2 runs on the NUC.
+## Current Stack
 
 ```text
-ROS 2 teleop / Nav2
+Nav2 / teleop
   -> /cmd_vel
-  -> teensy_serial_bridge.py
+  -> tablebot_bringup/teensy_serial_bridge.py
   -> USB serial: VEL,<linear_mps>,<angular_radps>
-  -> Teensy 4.1
-  -> motor PWM
+  -> Teensy motor controller
+  -> motors
 
-Teensy 4.1
+Teensy
   -> USB serial: ODOM,<left_ticks>,<right_ticks>,<v_mps>,<w_radps>,<theta_rad>,<remote_state>
   -> teensy_serial_bridge.py
   -> /wheel/odom
   -> robot_localization EKF
-  -> odom -> base_link
+  -> /odometry/filtered and odom -> base_link
 ```
 
-The RPLidar publishes `/scan`. SLAM Toolbox uses `/scan`, wheel odometry, and TF while mapping. AMCL and Nav2 use the saved map for navigation.
-
-## TF Contract
-
-Target tree:
+TF tree:
 
 ```text
 map
@@ -54,72 +42,55 @@ map
 
 Transform ownership:
 
-- `map -> odom`: SLAM Toolbox during mapping, AMCL during saved-map navigation.
-- `odom -> base_link`: `robot_localization` EKF.
-- `base_link -> laser_frame`: static transform publisher.
+- `map -> odom`: SLAM Toolbox while mapping, AMCL during saved-map navigation
+- `odom -> base_link`: `robot_localization`
+- `base_link -> laser_frame`: static transform publisher
 
-Do not run two publishers for the same transform. Do not run SLAM Toolbox and AMCL simultaneously if both publish `map -> odom`.
+Do not run SLAM Toolbox and AMCL at the same time.
 
-## Robot Geometry
-
-Coordinate assumptions:
-
-- `base_link` is at the center of the robot footprint on the floor plane.
-- Positive `x` points forward.
-- Positive `y` points left.
-- Positive `z` points upward.
-- `laser_frame` has zero roll, pitch, and yaw relative to `base_link`.
-
-Robot dimensions:
+## Important Files
 
 ```text
-Length: 27 in = 0.6858 m
-Width:  14.5 in = 0.3683 m
+~/robot_ws/src/tablebot_bringup/
+  launch/base.launch.py
+  launch/mapping.launch.py
+  launch/navigation.launch.py
+  launch/static_tf.launch.py
+  config/ekf.yaml
+  config/nav2_params.yaml
+  config/slam_toolbox_mapping.yaml
+  config/table_waypoints.yaml
+  config/mapping.rviz
+  maps/table_area.yaml
+  maps/table_area.pgm
+  scripts/teensy_option_a_serial.ino
+  tablebot_bringup/teensy_serial_bridge.py
+  tablebot_bringup/circle_table_waypoints.py
 ```
 
-Nav2 footprint:
+Build after code, launch, config, or map install changes:
 
-```yaml
-footprint: "[[0.3429, 0.1842], [0.3429, -0.1842], [-0.3429, -0.1842], [-0.3429, 0.1842]]"
+```bash
+cd ~/robot_ws
+colcon build --symlink-install --packages-select tablebot_bringup
+source install/setup.bash
 ```
-
-RPLidar A2M7 mounting:
-
-```text
-base_link -> laser_frame:
-x     = 0.1016
-y     = 0.0000
-z     = 0.3302
-roll  = 0.0000
-pitch = 0.0000
-yaw   = 0.0000
-```
-
-Use this transform in `static_transform_publisher`.
 
 ## Teensy Firmware
 
-Current firmware:
-
-```text
-teensy_option_a_serial.ino
-```
-
-Expected package location once this is moved into the ROS workspace:
+Firmware path:
 
 ```text
 ~/robot_ws/src/tablebot_bringup/scripts/teensy_option_a_serial.ino
 ```
 
-Responsibilities:
+Current control mode:
 
-- Read RC/Pixhawk channels.
-- Preserve manual override logic.
-- Count left/right quadrature encoder ticks.
-- Accept serial velocity commands from the NUC.
-- Run onboard skid-steer low-level control.
-- Drive motor PWM outputs.
-- Stream odometry telemetry to the NUC.
+- ROS 2 `/cmd_vel` is converted directly into left/right wheel angular velocity commands.
+- Combined velocity/yaw PID from the old controller is bypassed.
+- Autonomous PWM uses the full `0-255` range.
+- A turn anti-stiction boost raises PWM temporarily if Nav2 commands a turn but encoders show the robot is not rotating.
+- Teensy onboard LED reports idle, active autonomous command, manual override, and command timeout.
 
 Serial command:
 
@@ -133,125 +104,27 @@ Serial telemetry:
 ODOM,<left_ticks>,<right_ticks>,<v_mps>,<w_radps>,<theta_rad>,<remote_state>
 ```
 
-Reset command:
-
-```text
-RESET_ODOM
-```
-
-Remote states:
-
-```text
-NO_REMOTE     = 0
-REMOTE_AUTO   = 1
-REMOTE_MANUAL = 2
-```
-
-Behavior:
-
-- `REMOTE_MANUAL`: RC/Pixhawk directly commands left and right motor PWM.
-- `REMOTE_AUTO`: NUC/autonomous commands are allowed.
-- `NO_REMOTE`: NUC/autonomous commands are allowed, matching the existing robot behavior.
-
-Safety note: changing `NO_REMOTE` to stop would be reasonable later, but it intentionally changes behavior and should be done as a separate decision.
-
-Firmware constants to tune on the real robot:
-
-```cpp
-const int LEFT_MOTOR_POLARITY = 1;
-const int RIGHT_MOTOR_POLARITY = 1;
-const int LEFT_ENCODER_POLARITY = 1;
-const int RIGHT_ENCODER_POLARITY = 1;
-float bDR = 1.6 / 3.28;      // effective platform width, meters
-float rNominalDR = 0.054;    // nominal wheel radius, meters
-float eTickDR = 16000;       // encoder ticks per meter
-float omega_max = 15.0;      // max wheel angular velocity command
-float leftMotorFFTrim = 0.93;
-float rightMotorFFTrim = 1.08;
-```
-
-Motor polarity is applied at the H-bridge output layer so a positive wheel command means forward robot motion. Current setting keeps both motors non-inverted.
-
-Encoder polarity is separate from motor polarity. If a wheel is physically moving forward but its raw tick topic decreases, flip that wheel's encoder polarity constant.
-
-Control safety behavior:
-
-- Explicit zero commands, `VEL,0.0000,0.0000`, immediately clear PID state and set autonomous PWM commands to zero.
-- Command timeout also clears PID state and sets autonomous PWM commands to zero.
-- A small wheel-command deadband prevents tiny PID outputs from mapping to the minimum nonzero PWM.
-
-Current control mode:
-
-- Diagnostic feedforward mode is active.
-- `/cmd_vel` is converted directly to desired left/right wheel angular velocities:
-  - `omegaL = (v - w*b/2) / r`
-  - `omegaR = (v + w*b/2) / r`
-- The yaw term is flipped at the command conversion layer so positive ROS `angular.z` produces counterclockwise physical rotation.
-- Odometry yaw uses ROS convention: positive yaw is counterclockwise viewed from above, so `thetaDot = (omegaR - omegaL) * r / b`.
-- Initial feedforward trim is set from the stand test that drifted +14.34 degrees over about 0.779 m.
-- The old combined velocity/yaw PID is bypassed because its yaw loop reused heading-angle gains as yaw-rate gains.
-- If feedforward is smooth, the next controller should be a per-wheel velocity PID using encoder-measured `omegaL` and `omegaR`.
-
-The firmware is self-contained. It no longer depends on missing custom `TimeStep.h` or `Integrator.h` libraries; odometry integration is done directly with elapsed time.
-
-Built-in Teensy LED indicators:
-
-- Slow blink: ready/idle.
-- Solid on: autonomous command active.
-- Fast blink: manual override.
-- Very fast blink: command watchdog timeout.
-
-## Arduino CLI And Teensy Tooling
-
-Installed and verified on this NUC:
-
-```text
-arduino-cli: /usr/local/bin/arduino-cli
-version:     1.4.1
-Teensy core: teensy:avr@1.60.0
-Teensy 4.1:  teensy:avr:teensy41
-udev rules:  /etc/udev/rules.d/00-teensy.rules
-```
-
-The user is in the `dialout` and `plugdev` groups. If a new login session does not have serial access, reboot or log out and back in.
-
-Check the board:
-
-```bash
-arduino-cli board list
-```
-
-Expected when the Teensy is connected:
-
-```text
-Teensy 4.1 teensy:avr:teensy41
-```
-
-Arduino CLI expects the sketch folder name to match the main `.ino` file. This repo currently keeps the sketch at the repo root, so use a temporary matching folder for compile/upload:
+Flash:
 
 ```bash
 rm -rf /tmp/teensy_option_a_serial_flash
 mkdir -p /tmp/teensy_option_a_serial_flash
-cp teensy_option_a_serial.ino /tmp/teensy_option_a_serial_flash/teensy_option_a_serial_flash.ino
+cp ~/robot_ws/src/tablebot_bringup/scripts/teensy_option_a_serial.ino \
+  /tmp/teensy_option_a_serial_flash/teensy_option_a_serial_flash.ino
 
 arduino-cli compile \
   --fqbn teensy:avr:teensy41 \
   /tmp/teensy_option_a_serial_flash \
   --output-dir /tmp/teensy_option_a_serial_flash/build
-```
 
-Flash:
-
-```bash
+arduino-cli board list
 arduino-cli upload \
   -p <teensy_port_from_board_list> \
   --fqbn teensy:avr:teensy41 \
   /tmp/teensy_option_a_serial_flash
 ```
 
-The port can change. In the last verified session, `arduino-cli board list` showed `usb2/2-3`, but always use the current Teensy port shown by the board list command.
-
-After flashing, verify telemetry:
+Verify telemetry:
 
 ```bash
 stty -F /dev/ttyACM0 115200 raw -echo
@@ -264,202 +137,27 @@ Expected idle stream:
 ODOM,0,0,0.000000,0.000000,0.000000,0
 ```
 
-## ROS 2 Package
+## Lidar
 
-Package name:
-
-```text
-tablebot_bringup
-```
-
-Workspace:
+The Tablebot uses `sllidar_ros2` A2M8 launch files. The Tablebot mapping and navigation launch files default to:
 
 ```text
-~/robot_ws
+lidar_port:=auto
 ```
 
-Expected package structure:
+At launch time they pick the first available `/dev/ttyUSB*` and print:
 
 ```text
-tablebot_bringup/
-  package.xml
-  setup.py
-  setup.cfg
-  tablebot_bringup/
-    __init__.py
-    teensy_serial_bridge.py
-    circle_table_waypoints.py
-  launch/
-    base.launch.py
-    static_tf.launch.py
-    mapping.launch.py
-    navigation.launch.py
-  config/
-    ekf.yaml
-    slam_toolbox_mapping.yaml
-    nav2_params.yaml
-    mapping.rviz
-  maps/
-    table_area.yaml
-    table_area.pgm
-  scripts/
-    teensy_option_a_serial.ino
+Using SLLidar port: /dev/ttyUSB0
 ```
 
-Build after package changes:
+Manual override:
 
 ```bash
-cd ~/robot_ws
-colcon build --symlink-install
-source install/setup.bash
+ros2 launch tablebot_bringup navigation.launch.py lidar_port:=/dev/ttyUSB1
 ```
 
-## Serial Bridge
-
-Node:
-
-```text
-tablebot_bringup/teensy_serial_bridge.py
-```
-
-Responsibilities:
-
-- Subscribe to `/cmd_vel`.
-- Clamp velocity commands to safe limits.
-- Send `VEL,<linear>,<angular>` to the Teensy.
-- Read `ODOM,...` telemetry.
-- Publish raw encoder ticks on `/wheel/left_ticks` and `/wheel/right_ticks`.
-- Publish `/wheel/odom` as `nav_msgs/Odometry`.
-- Publish `/teensy/remote_state` as `std_msgs/Int32`.
-- Provide a reset service that sends `RESET_ODOM`.
-
-Defaults:
-
-```yaml
-port: /dev/ttyACM0
-baudrate: 115200
-cmd_vel_topic: /cmd_vel
-odom_topic: /wheel/odom
-odom_frame_id: odom
-base_frame_id: base_link
-max_linear_x: 0.35
-max_angular_z: 1.50
-command_timeout_sec: 0.50
-send_rate_hz: 20.0
-left_ticks_topic: /wheel/left_ticks
-right_ticks_topic: /wheel/right_ticks
-```
-
-The bridge does not publish TF. `robot_localization` owns `odom -> base_link`.
-
-## Base Bringup
-
-`base.launch.py` should start:
-
-- `teensy_serial_bridge`
-- `static_tf.launch.py`
-- `robot_localization` EKF
-
-Run:
-
-```bash
-ros2 launch tablebot_bringup base.launch.py
-```
-
-Expected topics:
-
-```text
-/cmd_vel
-/wheel/left_ticks
-/wheel/right_ticks
-/wheel/odom
-/odometry/filtered
-/teensy/remote_state
-/tf
-/tf_static
-```
-
-Expected EKF behavior:
-
-- Input: `/wheel/odom`
-- Output: `/odometry/filtered`
-- TF: `odom -> base_link`
-- `two_d_mode: true`
-- `world_frame: odom`
-
-## Hardware Tests
-
-Check Teensy serial:
-
-```bash
-ls /dev/ttyACM*
-```
-
-Check RPLidar serial:
-
-```bash
-ls /dev/ttyUSB*
-```
-
-Run the bridge directly from this repo during early testing:
-
-```bash
-source /opt/ros/humble/setup.bash
-python3 teensy_serial_bridge.py --ros-args \
-  -p port:=/dev/ttyACM0 \
-  -p baudrate:=115200 \
-  -p max_linear_x:=0.35 \
-  -p max_angular_z:=1.50
-```
-
-Check odometry:
-
-```bash
-ros2 topic echo /wheel/odom
-```
-
-Check raw encoder tick telemetry:
-
-```bash
-ros2 topic echo /wheel/left_ticks
-ros2 topic echo /wheel/right_ticks
-```
-
-Check static TF:
-
-```bash
-ros2 run tf2_ros tf2_echo base_link laser_frame
-```
-
-Test motion with the robot safely on blocks first:
-
-```bash
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-"{linear: {x: 0.05}, angular: {z: 0.0}}" --rate 10
-```
-
-Stop:
-
-```bash
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-"{linear: {x: 0.0}, angular: {z: 0.0}}" --once
-```
-
-## RPLidar
-
-Expected topic:
-
-```text
-/scan
-```
-
-Expected frame:
-
-```text
-laser_frame
-```
-
-Launch through the package mapping stack, or directly with the SLLidar driver:
+Direct lidar test:
 
 ```bash
 ros2 launch sllidar_ros2 sllidar_a2m8_launch.py \
@@ -477,31 +175,17 @@ ros2 topic hz /scan
 ros2 topic echo /scan --once
 ```
 
-If `/scan.header.frame_id` is not `laser_frame`, either adjust the RPLidar launch parameters or update the static TF child frame to match.
+## Mapping
 
-## Mapping Workflow
-
-Preferred two-terminal workflow.
-
-Terminal 1: base + lidar + SLAM + RViz
+Start mapping:
 
 ```bash
+cd ~/robot_ws
+source install/setup.bash
 ros2 launch tablebot_bringup mapping.launch.py
 ```
 
-Terminal 2: teleop
-
-```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-```
-
-Convenience script:
-
-```bash
-~/robot_ws/start_mapping.sh
-```
-
-This opens both mapping and teleop. Teleop uses:
+Run teleop separately:
 
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
@@ -509,29 +193,7 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
   -p turn:=1.50
 ```
 
-If mapping is already running, start teleop alone with:
-
-```bash
-~/robot_ws/start_teleop.sh
-```
-
-`mapping.launch.py` includes:
-
-- `base.launch.py`
-- `sllidar_ros2` A2M8 lidar launch on `/dev/ttyUSB0`
-- SLAM Toolbox `online_async_launch.py`
-- RViz
-
-Use SLAM Toolbox's `slam_params_file` launch argument, not `params_file`.
-
-RViz:
-
-- Fixed frame: `map`
-- Displays: TF, LaserScan `/scan`, Map `/map`, Odometry `/odometry/filtered`
-
-Drive slowly around the table and nearby features.
-
-Save map:
+Save a map:
 
 ```bash
 mkdir -p ~/robot_ws/src/tablebot_bringup/maps
@@ -539,157 +201,118 @@ ros2 run nav2_map_server map_saver_cli \
   -f ~/robot_ws/src/tablebot_bringup/maps/table_area
 ```
 
-Expected output:
+Current saved map:
 
 ```text
-table_area.yaml
-table_area.pgm
-```
-
-## Navigation Workflow
-
-Use the saved map:
-
-```bash
 ~/robot_ws/src/tablebot_bringup/maps/table_area.yaml
+~/robot_ws/src/tablebot_bringup/maps/table_area.pgm
 ```
 
-One-command runtime stack:
+## Navigation
+
+Start localization, Nav2, base, lidar, and RViz:
 
 ```bash
+cd ~/robot_ws
+source install/setup.bash
 ros2 launch tablebot_bringup navigation.launch.py
-```
-
-Convenience script:
-
-```bash
-~/robot_ws/start_navigation.sh
-```
-
-`navigation.launch.py` includes:
-
-- `base.launch.py`
-- `sllidar_ros2` A2M8 lidar launch on `/dev/ttyUSB0`
-- Nav2 bringup with AMCL localization against `table_area.yaml`
-- RViz using `mapping.rviz`
-
-Nav2 parameters:
-
-```text
-config/nav2_params.yaml
-```
-
-Important frame/topic settings:
-
-```yaml
-map frame:        map
-odom frame:       odom
-base frame:       base_link
-scan topic:       /scan
-filtered odom:    /odometry/filtered
-cmd_vel output:   /cmd_vel
 ```
 
 In RViz:
 
-1. Use `2D Pose Estimate` to set the robot's initial pose on the saved map.
+1. Set the initial pose with `2D Pose Estimate`.
 2. Confirm the laser scan aligns with the map.
-3. Use `Nav2 Goal` to test one autonomous goal.
+3. Test one `Nav2 Goal`.
+4. Only then run the table waypoint loop.
 
-Until the initial pose is set, AMCL will warn:
+Useful checks:
 
-```text
-AMCL cannot publish a pose or update the transform. Please set the initial pose...
+```bash
+ros2 topic echo /map --once
+ros2 topic hz /scan
+ros2 run tf2_ros tf2_echo map odom
+ros2 run tf2_ros tf2_echo odom base_link
 ```
 
-The global costmap/planner may also wait for `map -> odom`. That is expected before localization has an initial pose.
+## Table Waypoint Loop
 
-Do not run the waypoint loop until one clicked Nav2 goal works reliably.
-
-## Waypoint Loop
-
-Node:
-
-```text
-tablebot_bringup/circle_table_waypoints.py
-```
-
-Implementation:
-
-```text
-Nav2 Simple Commander BasicNavigator.followWaypoints()
-```
-
-Waypoint file:
+Waypoint config:
 
 ```text
 ~/robot_ws/src/tablebot_bringup/config/table_waypoints.yaml
 ```
 
-The file has a safety latch:
+Runner:
 
-```yaml
-enabled: false
+```text
+~/robot_ws/src/tablebot_bringup/tablebot_bringup/circle_table_waypoints.py
 ```
 
-Replace the example poses with real map-frame waypoints around the table, then set:
+Current runner behavior:
 
-```yaml
-enabled: true
-```
+- Reads `table_waypoints.yaml` from the installed package.
+- Uses Nav2 Simple Commander.
+- Calls `navigator.goThroughPoses(...)`.
+- Rebuilds fresh stamped poses every loop.
+- Appends the first waypoint to the end of each loop so each route is closed.
+- Does not call `navigator.lifecycleShutdown()` because Nav2 is launched externally.
 
 Run:
 
 ```bash
+cd ~/robot_ws
+source install/setup.bash
 ros2 run tablebot_bringup circle_table_waypoints
 ```
 
-Use a custom waypoint file:
-
-```bash
-ros2 run tablebot_bringup circle_table_waypoints --ros-args \
-  -p waypoints_file:=$HOME/robot_ws/src/tablebot_bringup/config/table_waypoints.yaml
-```
-
-Waypoint strategy:
-
-- Use 4 to 8 waypoints around the table.
-- Keep generous clearance from the table.
-- Test one Nav2 goal first.
-- Test two waypoints.
-- Test a full loop once.
-- Then enable indefinite looping.
-
-To repeat the route:
+Current waypoint settings:
 
 ```yaml
+enabled: true
+frame_id: map
 loop: true
-repeat_count: 0   # 0 means forever
+repeat_count: 6
 ```
 
-## Known Risks
+`repeat_count: 0` with `loop: true` means run forever.
 
-- Direction conventions: verify forward motion, positive yaw, and odometry sign before mapping.
-- Duplicate TF publishers: only one node should publish each transform.
-- No IMU: yaw during skid-steer turns depends on wheel odometry and lidar localization, so keep speeds conservative.
-- Waypoints too close to the table: the robot footprint is 0.6858 m by 0.3683 m and skid-steer turns need margin.
-- USB device names can change: add stable udev symlinks later for `/dev/tablebot_teensy` and `/dev/tablebot_lidar`.
+To collect new waypoints:
+
+```bash
+ros2 topic echo /clicked_point
+```
+
+In RViz, use the `Publish Point` tool and click map-frame points around the table. For smoother continuous motion, prefer 8-12 points with headings tangent to the path rather than 4 sharp corners.
+
+## Current Nav2 Tuning Notes
+
+The robot is a skid-steer tank, so turns need assertive angular commands and enough PWM to overcome track friction.
+
+Current tuning includes:
+
+- Higher bridge clamps in `base.launch.py`
+- Higher Nav2 linear/angular limits in `nav2_params.yaml`
+- Reduced Nav2 controller/BT rates for the NUC
+- Full autonomous PWM range in firmware
+- Encoder-based anti-stiction turn boost in firmware
+
+If it clips obstacles, first move waypoints farther from the table. If it sticks in turns, tune the Teensy stiction boost before making Nav2 more aggressive.
+
+## Known Gotchas
+
+- USB port names can change after replugging or hardware work. Launch files auto-select `/dev/ttyUSB*` for lidar, but Teensy still defaults to `/dev/ttyACM0`.
+- AMCL will not publish `map -> odom` until an initial pose is set.
+- If RViz says `frame [map] does not exist`, set the initial pose or check AMCL/map server logs.
+- If lidar works standalone but not in bringup, check the selected lidar port printed by the launch.
+- No IMU means yaw depends on wheel odometry and lidar localization; keep obstacle clearance generous.
 
 ## Mission Checklist
 
-1. ROS 2 Humble installed.
-2. `tablebot_bringup` builds.
-3. Teensy firmware compiles and flashes.
-4. Teensy streams `ODOM,...` on `/dev/ttyACM0`.
-5. `teensy_serial_bridge` publishes `/wheel/odom`.
-6. `robot_localization` publishes `odom -> base_link`.
-7. Static TF publishes `base_link -> laser_frame`.
-8. `/cmd_vel` moves the robot correctly.
-9. RPLidar publishes `/scan`.
-10. SLAM Toolbox builds `/map`.
-11. Map saver writes `table_area.yaml` and `table_area.pgm`.
-12. Nav2 launches with the saved map.
-13. AMCL publishes `/amcl_pose`.
-14. One RViz Nav2 Goal works.
-15. Real table-circling waypoints are entered.
-16. The waypoint loop circles the table repeatedly.
+1. Teensy streams `ODOM,...`.
+2. `/wheel/odom` and `/odometry/filtered` publish.
+3. `odom -> base_link` and `base_link -> laser_frame` exist.
+4. `/scan` publishes in `laser_frame`.
+5. Saved map loads.
+6. AMCL publishes `map -> odom` after initial pose.
+7. One RViz Nav2 goal works.
+8. `circle_table_waypoints` completes the requested table loops.

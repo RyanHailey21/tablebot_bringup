@@ -1,13 +1,26 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
+import glob
 
 
-def generate_launch_description():
+def resolve_lidar_port(context):
+    requested = LaunchConfiguration('lidar_port').perform(context)
+    if requested != 'auto':
+        return requested
+
+    ports = sorted(glob.glob('/dev/ttyUSB*'))
+    if ports:
+        return ports[0]
+
+    return '/dev/ttyUSB0'
+
+
+def launch_setup(context, *args, **kwargs):
     tablebot_pkg = get_package_share_directory('tablebot_bringup')
     sllidar_pkg = get_package_share_directory('sllidar_ros2')
     nav2_pkg = get_package_share_directory('nav2_bringup')
@@ -19,21 +32,11 @@ def generate_launch_description():
     map_yaml = os.path.join(tablebot_pkg, 'maps', 'table_area.yaml')
     rviz_config = os.path.join(tablebot_pkg, 'config', 'mapping.rviz')
 
-    lidar_port = LaunchConfiguration('lidar_port')
+    lidar_port = resolve_lidar_port(context)
     teensy_port = LaunchConfiguration('teensy_port')
 
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            'lidar_port',
-            default_value='/dev/ttyUSB1',
-            description='Serial port for the SLLidar'
-        ),
-
-        DeclareLaunchArgument(
-            'teensy_port',
-            default_value='/dev/ttyACM0',
-            description='Serial port for the Teensy motor controller'
-        ),
+    return [
+        LogInfo(msg=f"Using SLLidar port: {lidar_port}"),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(base_launch),
@@ -72,4 +75,24 @@ def generate_launch_description():
             output='screen',
             arguments=['-d', rviz_config]
         ),
+    ]
+
+
+def generate_launch_description():
+    from launch.actions import OpaqueFunction
+
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'lidar_port',
+            default_value='auto',
+            description='Serial port for the SLLidar, or auto to choose /dev/ttyUSB*'
+        ),
+
+        DeclareLaunchArgument(
+            'teensy_port',
+            default_value='/dev/ttyACM0',
+            description='Serial port for the Teensy motor controller'
+        ),
+
+        OpaqueFunction(function=launch_setup),
     ])

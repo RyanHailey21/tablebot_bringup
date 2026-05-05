@@ -129,6 +129,17 @@ float leftMotorFFTrim = 0.93;
 float rightMotorFFTrim = 1.08;
 const int AUTONOMOUS_MIN_PWM = 105;
 const int AUTONOMOUS_MAX_PWM = 255;
+
+// Skid-steer tracks can need a short breakaway kick to overcome static
+// friction during turns. This boost only applies while a turn is commanded
+// and encoder feedback says the robot has not started rotating yet.
+const float TURN_STICTION_CMD_MIN = 0.25;          // [rad/s]
+const float TURN_STICTION_THETADOT_MIN = 0.12;    // [rad/s]
+const float TURN_STICTION_WHEEL_MIN = 0.60;       // [rad/s]
+const uint32_t TURN_STICTION_DELAY_MS = 180;
+const uint32_t TURN_STICTION_STAGE2_DELAY_MS = 550;
+const int TURN_STICTION_PWM_STAGE1 = 160;
+const int TURN_STICTION_PWM_STAGE2 = 205;
 //=====
 
 //===== Command state
@@ -161,6 +172,7 @@ float prev_time_navcontrol = 0.0;
 float dt_millis = 30.0;
 float dt = dt_millis / 1000.0;
 float TsampleEncoderDR = 0.0;
+uint32_t turn_stiction_start_ms = 0;
 
 // PID state
 float velerror = 0.0;
@@ -343,12 +355,69 @@ void reset_pid_state() {
   u_yaw = 0.0;
   omegaR_u = 0.0;
   omegaL_u = 0.0;
+  turn_stiction_start_ms = 0;
 }
 
 void stop_autonomous_control() {
   reset_pid_state();
   pwm_cmdr = 0;
   pwm_cmdl = 0;
+}
+
+int sign_of_pwm(int value) {
+  if (value > 0) return 1;
+  if (value < 0) return -1;
+  return 0;
+}
+
+int enforce_pwm_floor(int value, int floor_abs) {
+  int direction = sign_of_pwm(value);
+  if (direction == 0) {
+    return value;
+  }
+
+  int boosted = abs(value);
+  if (boosted < floor_abs) {
+    boosted = floor_abs;
+  }
+  if (boosted > AUTONOMOUS_MAX_PWM) {
+    boosted = AUTONOMOUS_MAX_PWM;
+  }
+  return direction * boosted;
+}
+
+void apply_turn_stiction_boost(float local_velcom, float local_yawratecom, uint32_t now_ms) {
+  bool turn_commanded = fabs(local_yawratecom) >= TURN_STICTION_CMD_MIN;
+  bool turn_motion_low = fabs(thetaDot) < TURN_STICTION_THETADOT_MIN;
+  bool wheel_motion_low = (fabs(omegaL) < TURN_STICTION_WHEEL_MIN) &&
+                          (fabs(omegaR) < TURN_STICTION_WHEEL_MIN);
+
+  // Bias toward helping in-place or near-in-place turns. During normal arcs,
+  // linear feedforward usually supplies enough track motion on its own.
+  bool mostly_turning = fabs(local_velcom) < 0.12;
+
+  if (!(turn_commanded && mostly_turning && turn_motion_low && wheel_motion_low)) {
+    turn_stiction_start_ms = 0;
+    return;
+  }
+
+  if (turn_stiction_start_ms == 0) {
+    turn_stiction_start_ms = now_ms;
+    return;
+  }
+
+  uint32_t stuck_ms = now_ms - turn_stiction_start_ms;
+  if (stuck_ms < TURN_STICTION_DELAY_MS) {
+    return;
+  }
+
+  int boost_pwm = TURN_STICTION_PWM_STAGE1;
+  if (stuck_ms >= TURN_STICTION_STAGE2_DELAY_MS) {
+    boost_pwm = TURN_STICTION_PWM_STAGE2;
+  }
+
+  pwm_cmdl = enforce_pwm_floor(pwm_cmdl, boost_pwm);
+  pwm_cmdr = enforce_pwm_floor(pwm_cmdr, boost_pwm);
 }
 //=====
 
@@ -574,6 +643,8 @@ void controloutput() {
   } else {
     pwm_cmdl = 0;
   }
+
+  apply_turn_stiction_boost(local_velcom, local_yawratecom, now_ms);
 }
 //=====
 

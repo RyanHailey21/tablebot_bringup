@@ -2,9 +2,10 @@
 enabled: true
 frame_id: map
 
-# Start with one route. After one clean pass, set loop true and repeat_count 0.
+# One loop is the full 4-waypoint route below.
+# repeat_count 0 with loop true means run forever.
 loop: true
-repeat_count: 2
+repeat_count: 6
 
 waypoints:
   - name: table_loop_1
